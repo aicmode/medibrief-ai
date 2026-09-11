@@ -1,12 +1,15 @@
-import { SECTION_META } from "../sections";
-import { SECTION_IDS, type MemoOrganizer, type MemoSection, type VisitMemo } from "../types";
+import type { MemoOrganizer, VisitMemo } from "../types";
 import { organizeWithRules } from "./rule-based";
+import { normalizeVisitMemo } from "./validate";
 
 /**
- * サーバー側（/api/organize）に整理を任せる実装。
- * AI に差し替えるときの窓口になる。返り値の形が壊れていたら、
- * その場でルールベースに戻すので画面が空になることはない。
+ * サーバー側（/api/organize）に整理を任せる実装。AI整理の窓口。
+ *
+ * 応答の形が壊れていたら、その場でルールベースに戻すので画面が空になることはない。
+ * ネットワーク障害・タイムアウト・JSON不正のいずれでも同じ経路でフォールバックする。
  */
+export const REMOTE_TIMEOUT_MS = 25_000;
+
 export const remoteOrganizer: MemoOrganizer = {
   name: "api",
   organize: async (input) => {
@@ -15,49 +18,29 @@ export const remoteOrganizer: MemoOrganizer = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input }),
+        signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`整理APIの応答が異常です (${res.status})`);
-      return parseVisitMemo(await res.json());
+      return parseVisitMemo(await res.json(), input);
     } catch (error) {
-      console.warn("[MediBrief] APIでの整理に失敗したためルールベースに切り替えます", error);
+      // 握り潰さず、フォールバックしたことが分かるログを残す（入力内容は出さない）
+      console.warn(
+        "[MediBrief] AI整理に失敗したため、この端末内のルールベース整理に切り替えました:",
+        error instanceof Error ? error.message : String(error),
+      );
       const fallback = organizeWithRules(input);
       return { ...fallback, provider: "rule-based (fallback)" };
     }
   },
 };
 
-/** 外から来たJSONを、画面が期待する形に整える（欠けている項目は空で補う） */
-export function parseVisitMemo(value: unknown): VisitMemo {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("整理結果がオブジェクトではありません");
-  }
-  const raw = value as { sections?: unknown; provider?: unknown };
-  if (!Array.isArray(raw.sections)) {
-    throw new Error("整理結果に sections がありません");
-  }
-
-  const incoming = new Map<string, string[]>();
-  for (const section of raw.sections) {
-    if (typeof section !== "object" || section === null) continue;
-    const { id, items } = section as { id?: unknown; items?: unknown };
-    if (typeof id !== "string" || !Array.isArray(items)) continue;
-    incoming.set(
-      id,
-      items.filter((item): item is string => typeof item === "string" && item.trim() !== ""),
-    );
-  }
-
-  const sections: MemoSection[] = SECTION_IDS.map((id) => ({
-    id,
-    title: SECTION_META[id].title,
-    hint: SECTION_META[id].hint,
-    emptyGuide: SECTION_META[id].emptyGuide,
-    items: (incoming.get(id) ?? []).map((item) => item.trim()),
-  }));
-
-  return {
-    sections,
-    provider: typeof raw.provider === "string" ? raw.provider : "api",
-    generatedAt: new Date().toISOString(),
-  };
+/**
+ * 外から来たJSONを、画面が期待する形に整える。
+ * 欠けている項目は空で補い、入力に根拠のないタイムラインは落とす。
+ */
+export function parseVisitMemo(value: unknown, sourceInput = ""): VisitMemo {
+  return normalizeVisitMemo(value, {
+    sourceInput,
+    fallbackProvider: "api",
+  });
 }

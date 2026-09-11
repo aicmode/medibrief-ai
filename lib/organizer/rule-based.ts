@@ -1,6 +1,8 @@
 import { createEmptySections } from "../sections";
+import { extractTimeline } from "../timeline";
 import type { MemoOrganizer, MemoSection, SectionId, VisitMemo } from "../types";
 import * as D from "./dictionaries";
+import { findTimePhrases, splitClauses, timeText } from "./text";
 
 /**
  * ルールベースの受診メモ整理。
@@ -11,6 +13,7 @@ import * as D from "./dictionaries";
  *   2. 症状の言葉を、伝えやすい言い方に置き換える
  *   3. 時期の表現を「いつから」に抜き出す
  *   4. 残りの文を手がかり語で各項目に振り分ける
+ *   5. 入力に書かれた時期の表現だけで、症状経過タイムラインを作る
  *
  * やらないこと：病名の推測、薬の提案、緊急度の判定。
  */
@@ -20,7 +23,6 @@ export const RULE_BASED_PROVIDER = "rule-based";
 /** 振り分け先になりうる項目（主な困りごと・いつから・伝え忘れ防止メモは別処理） */
 type NarrativeSection = "medication" | "questions" | "progress" | "context";
 
-type TimeHit = { phrase: string; index: number; end: number; withKara: boolean };
 type SymptomHit = { label: string; negated: boolean };
 
 export function organizeWithRules(input: string): VisitMemo {
@@ -100,8 +102,10 @@ export function organizeWithRules(input: string): VisitMemo {
 
   return {
     sections,
+    timeline: extractTimeline(input),
     provider: RULE_BASED_PROVIDER,
     generatedAt: new Date().toISOString(),
+    sourceInput: input,
   };
 }
 
@@ -110,39 +114,8 @@ export const ruleBasedOrganizer: MemoOrganizer = {
   organize: async (input) => organizeWithRules(input),
 };
 
-/* ------------------------------------------------------------------ */
-/* 文の分割                                                            */
-/* ------------------------------------------------------------------ */
-
-function normalize(input: string): string {
-  return input
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t　]+/g, " ")
-    .trim();
-}
-
-/** 句読点で短い句に分ける。「？」「！」は疑問の手がかりなので文末に残す。 */
-export function splitClauses(input: string): string[] {
-  const separators = "。．、，,；;\n";
-  const keepAndBreak = "？?！!";
-  const out: string[] = [];
-  let buffer = "";
-
-  for (const char of normalize(input)) {
-    if (separators.includes(char)) {
-      out.push(buffer);
-      buffer = "";
-    } else if (keepAndBreak.includes(char)) {
-      out.push(buffer + char);
-      buffer = "";
-    } else {
-      buffer += char;
-    }
-  }
-  out.push(buffer);
-
-  return out.map((s) => s.trim()).filter((s) => s.length >= 2);
-}
+// 文の分割は lib/organizer/text.ts に移した（タイムライン抽出と共用するため）。
+export { splitClauses } from "./text";
 
 /* ------------------------------------------------------------------ */
 /* 症状の言い換え                                                      */
@@ -194,40 +167,6 @@ function isNegated(text: string, from: number): boolean {
   if (!D.NEGATION_KEYS.some((k) => window.includes(k))) return false;
   // 「痛みが治らない」は症状の否定ではないので除外する
   return !D.NEGATION_EXCEPTIONS.some((k) => window.includes(k));
-}
-
-/* ------------------------------------------------------------------ */
-/* 時期の抜き出し                                                      */
-/* ------------------------------------------------------------------ */
-
-function findTimePhrases(text: string): TimeHit[] {
-  const found: TimeHit[] = [];
-
-  for (const source of D.TIME_PATTERN_SOURCES) {
-    for (const match of text.matchAll(new RegExp(source, "g"))) {
-      const index = match.index ?? 0;
-      const end = index + match[0].length;
-      found.push({
-        phrase: match[0],
-        index,
-        end,
-        withKara: text.slice(end).startsWith("から"),
-      });
-    }
-  }
-
-  // 「今朝」と「今」のように重なった検出は、長い方だけを残す
-  found.sort((a, b) => a.index - b.index || b.phrase.length - a.phrase.length);
-  const accepted: TimeHit[] = [];
-  for (const hit of found) {
-    const overlaps = accepted.some((a) => hit.index < a.end && a.index < hit.end);
-    if (!overlaps) accepted.push(hit);
-  }
-  return accepted;
-}
-
-function timeText(hit: TimeHit): string {
-  return hit.withKara ? `${hit.phrase}から` : hit.phrase;
 }
 
 /* ------------------------------------------------------------------ */

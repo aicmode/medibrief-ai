@@ -17,19 +17,109 @@ body {
   color: #1e293b; /* slate-800 */
 }
 
-/* 受診メモをそのまま印刷して持って行けるようにする */
+/* 印刷用の本文（components/PrintableMemo.tsx）は画面には出さない */
+.print-only {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* 印刷 / PDF保存                                                      */
+/*                                                                     */
+/* 画面のUIは .no-print で全部消し、紙に出るのは PrintableMemo だけに   */
+/* する。A4・余白15mmで、セクションが途中で切れないようにしている。     */
+/* ------------------------------------------------------------------ */
 @media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  html,
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
   .no-print {
     display: none !important;
   }
 
-  body {
-    background-color: #ffffff;
+  .print-only {
+    display: block !important;
   }
 
-  .print-plain {
-    border: 0 !important;
-    box-shadow: none !important;
-    padding: 0 !important;
+  .print-doc {
+    font-size: 10.5pt;
+    line-height: 1.65;
+    color: #000000;
+    overflow-wrap: anywhere;
+  }
+
+  .print-doc .print-header {
+    margin-bottom: 10pt;
+    padding-bottom: 4pt;
+    border-bottom: 1.5pt solid #000000;
+  }
+
+  .print-doc h1 {
+    margin: 0;
+    font-size: 16pt;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .print-doc .print-meta {
+    margin: 2pt 0 0;
+    font-size: 9pt;
+    color: #333333;
+  }
+
+  .print-doc .print-section {
+    margin-bottom: 9pt;
+    /* 項目が2ページにまたがらないようにする */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-doc h2 {
+    margin: 0 0 3pt;
+    padding-left: 5pt;
+    border-left: 3pt solid #333333;
+    font-size: 11.5pt;
+    font-weight: 700;
+  }
+
+  .print-doc ul {
+    margin: 0;
+    padding-left: 18pt;
+    list-style: disc;
+  }
+
+  .print-doc li {
+    margin-bottom: 2pt;
+  }
+
+  .print-doc .print-empty,
+  .print-doc .print-note {
+    margin: 0 0 0 5pt;
+    font-size: 9pt;
+    color: #444444;
+  }
+
+  .print-doc .print-time {
+    margin-right: 6pt;
+    font-weight: 700;
+  }
+
+  .print-doc .print-footer {
+    margin-top: 12pt;
+    padding-top: 5pt;
+    border-top: 0.5pt solid #999999;
+    font-size: 8.5pt;
+    color: #333333;
+  }
+
+  .print-doc .print-footer p {
+    margin: 0 0 2pt;
   }
 }
