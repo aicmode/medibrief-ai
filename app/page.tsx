@@ -1,9 +1,19 @@
 import DisclaimerNotice from "@/components/DisclaimerNotice";
 import MemoBuilder from "@/components/MemoBuilder";
-import { isLocalOnly } from "@/lib/organizer";
 import { DISCLAIMER } from "@/lib/format";
+import { resolveDefaultMode } from "@/lib/organizer";
+
+/**
+ * AIが使える設定かどうかを、ビルド時ではなく実行時に見るため動的描画にする。
+ * （APIキーを後から設定しても、再ビルドなしで反映される）
+ */
+export const dynamic = "force-dynamic";
 
 export default function Home() {
+  // サーバー側でキーの「有無」だけを判定する。キーそのものはクライアントへ渡さない。
+  const aiConfigured = Boolean(process.env.OPENAI_API_KEY);
+  const defaultMode = resolveDefaultMode(aiConfigured);
+
   return (
     <div className="flex min-h-full flex-col">
       <header className="no-print border-b border-slate-200 bg-white">
@@ -39,18 +49,25 @@ export default function Home() {
         <div className="no-print mb-4">
           <DisclaimerNotice />
         </div>
-        <MemoBuilder />
+        <MemoBuilder aiConfigured={aiConfigured} defaultMode={defaultMode} />
       </main>
 
       <footer className="no-print mt-2 border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-5 text-xs leading-relaxed text-slate-500 sm:px-6">
           <p>{DISCLAIMER}</p>
-          <p className="mt-1">
-            {isLocalOnly()
-              ? "入力した内容はブラウザの中だけで処理され、外部に送信・保存されません。"
-              : "現在はサーバー経由で整理する設定です（NEXT_PUBLIC_MEMO_PROVIDER=api）。入力内容は整理のため外部APIに送信されます。"}
-          </p>
-          <p className="mt-1 text-slate-400">MediBrief — 受診メモ整理ツール</p>
+          <p className="mt-2 font-medium text-slate-600">入力内容の扱い</p>
+          <ul className="mt-1 space-y-0.5">
+            <li>
+              ・「この端末で整理」を選んだときは、入力内容を外部へ送信しません（ブラウザ内で処理します）。
+            </li>
+            <li>
+              ・「AIで整理」を選んだときだけ、整理のために入力内容が外部API（OpenAI）へ送信されます。
+            </li>
+            <li>
+              ・保存した受診メモは、この端末のブラウザ（localStorage）にのみ保存します。サーバーやクラウドのデータベースには保存しません。
+            </li>
+          </ul>
+          <p className="mt-2 text-slate-400">MediBrief — 受診メモ整理ツール</p>
         </div>
       </footer>
     </div>
